@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+contract ForceCode {
+    address public admin;
+    uint256 public registrationFee;
+    uint256 public prizePool;
+    uint256 public competitionStart;
+    uint256 public competitionDuration = 7 days;
+
+    struct Contestant {
+        address wallet;
+        string codeforcesID;
+        string discordID;
+        uint256 points;
+        bool registered;
+    }
+
+    mapping(address => Contestant) public contestants;
+    address[] public allContestants;
+
+    // Reentrancy guard flag
+    bool private locked;
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin can call this function");
+        _;
+    }
+
+    modifier competitionOngoing() {
+        require(block.timestamp < competitionStart + competitionDuration, "Competition ended");
+        _;
+    }
+
+    modifier competitionEnded() {
+        require(block.timestamp >= competitionStart + competitionDuration, "Competition ongoing");
+        _;
+    }
+
+    // Custom reentrancy guard
+    modifier noReentrancy() {
+        require(!locked, "Reentrant call detected");
+        locked = true;
+        _;
+        locked = false;
+    }
+
+    constructor(uint256 _registrationFee) {
+        admin = msg.sender;
+        registrationFee = _registrationFee;
+        competitionStart = block.timestamp;
+    }
+
+    // Individual player registration
+    function register(
+        string memory _codeforcesID,
+        string memory _discordID
+    ) external payable competitionOngoing {
+        require(msg.value == registrationFee, "Incorrect registration fee");
+        require(!contestants[msg.sender].registered, "You are already registered");
+
+        // Register the player
+        contestants[msg.sender] = Contestant({
+            wallet: msg.sender,
+            codeforcesID: _codeforcesID,
+            discordID: _discordID,
+            points: 0,
+            registered: true
+        });
+
+        allContestants.push(msg.sender);
+        prizePool += msg.value;
+    }
+
+    // Update points of a player (admin only)
+    function updatePoints(address _contestantAddress, uint256 _points)
+        external
+        onlyAdmin
+        competitionOngoing
+    {
+        require(contestants[_contestantAddress].registered, "Player not registered");
+        contestants[_contestantAddress].points = _points;
+    }
+
+    // Distribute prize after competition ends
+    function distributePrize() external onlyAdmin competitionEnded noReentrancy {
+        require(allContestants.length >= 3, "Not enough contestants to distribute prizes");
+
+        // Sort contestants by points in descending order
+        for (uint256 i = 0; i < allContestants.length - 1; i++) {
+            for (uint256 j = 0; j < allContestants.length - 1 - i; j++) {
+                if (contestants[allContestants[j]].points < contestants[allContestants[j + 1]].points) {
+                    address temp = allContestants[j];
+                    allContestants[j] = allContestants[j + 1];
+                    allContestants[j + 1] = temp;
+                }
+            }
+        }
+
+        uint256 totalPrize = prizePool;
+        uint256 firstPrize = (totalPrize * 50) / 100;
+        uint256 secondPrize = (totalPrize * 25) / 100;
+        uint256 thirdPrize = (totalPrize * 15) / 100;
+
+        payable(allContestants[0]).transfer(firstPrize); // 50% to 1st
+        payable(allContestants[1]).transfer(secondPrize); // 25% to 2nd
+        payable(allContestants[2]).transfer(thirdPrize); // 15% to 3rd
+
+        // Reset prize pool
+        prizePool = 0;
+    }
+}

@@ -1,0 +1,209 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+contract ForceCode {
+    struct Player {
+        address walletAddress;
+        string codeforcesId;
+        string discordId;
+        bool hasRegistered;
+        uint256 initialRank;
+        uint256 finalRank;
+    }
+
+    struct Contest {
+        uint256 startTime;
+        uint256 duration;
+        uint256 prizePool;
+        bool isActive;
+        uint256 playerCount;
+        bool prizesDistributed;
+        address manager;
+        address[] playerAddresses;
+        mapping(address => Player) players;
+    }
+
+    // Constants
+    uint256 public constant ENTRY_FEE = 0.001 ether;
+    uint256 public constant FIRST_PRIZE_PERCENTAGE = 50;
+    uint256 public constant SECOND_PRIZE_PERCENTAGE = 30;
+    uint256 public constant THIRD_PRIZE_PERCENTAGE = 15;
+    uint256 public constant MAX_PLAYERS = 3;
+    uint256 public constant DEFAULT_DURATION = 3 hours;
+
+    // Storage
+    mapping(uint256 => Contest) public contests;
+    uint256 public nextContestId;
+
+    // Events
+    event ContestCreated(uint256 indexed contestId, address indexed creator);
+    event PlayerRegistered(uint256 indexed contestId, address indexed player, string codeforcesId);
+    event ContestStarted(uint256 indexed contestId, uint256 startTime);
+    event PrizesDistributed(uint256 indexed contestId, address[] winners, uint256[] amounts);
+
+    modifier onlyContestManager(uint256 contestId) {
+        require(contests[contestId].manager == msg.sender, "Not contest manager");
+        _;
+    }
+
+    modifier noReentrant() {
+        require(msg.sender == tx.origin, "No contracts allowed");
+        _;
+    }
+
+    function createContest() external returns (uint256) {
+        uint256 contestId = nextContestId++;
+        Contest storage contest = contests[contestId];
+        
+        contest.duration = DEFAULT_DURATION;
+        contest.isActive = true;
+        contest.prizesDistributed = false;
+        contest.manager = msg.sender;
+        
+        emit ContestCreated(contestId, msg.sender);
+        return contestId;
+    }
+
+    function registerPlayer(
+        uint256 contestId,
+        string calldata codeforcesId,
+        string calldata discordId,
+        uint256 initialRank
+    ) external payable noReentrant {
+        Contest storage contest = contests[contestId];
+        require(contest.isActive, "Contest does not exist or is not active");
+        require(msg.value == ENTRY_FEE, "Incorrect entry fee");
+        require(contest.playerCount < MAX_PLAYERS, "Contest is full");
+        require(!contest.players[msg.sender].hasRegistered, "Already registered");
+        require(contest.startTime == 0, "Contest already started");
+
+        Player memory player = Player({
+            walletAddress: msg.sender,
+            codeforcesId: codeforcesId,
+            discordId: discordId,
+            initialRank: initialRank,
+            finalRank: 0,
+            hasRegistered: true
+        });
+
+        contest.players[msg.sender] = player;
+        contest.playerAddresses.push(msg.sender);
+        contest.playerCount++;
+        contest.prizePool += msg.value;
+
+        emit PlayerRegistered(contestId, msg.sender, codeforcesId);
+
+        if (contest.playerCount == MAX_PLAYERS) {
+            _startContest(contestId);
+        }
+    }
+
+    function _startContest(uint256 contestId) private {
+        Contest storage contest = contests[contestId];
+        require(contest.isActive, "Contest is not active");
+        require(contest.playerCount > 0, "No players registered");
+
+        contest.startTime = block.timestamp;
+        emit ContestStarted(contestId, contest.startTime);
+    }
+
+    function updateFinalRanks(
+        uint256 contestId,
+        address[] calldata playerAddresses,
+        uint256[] calldata finalRanks
+    ) external onlyContestManager(contestId) {
+        Contest storage contest = contests[contestId];
+        require(contest.isActive, "Contest is not active");
+        require(block.timestamp >= contest.startTime + contest.duration, "Contest still in progress");
+        require(playerAddresses.length == finalRanks.length, "Arrays length mismatch");
+        require(playerAddresses.length == contest.playerCount, "Invalid player count");
+
+        for (uint256 i = 0; i < playerAddresses.length; i++) {
+            require(contest.players[playerAddresses[i]].hasRegistered, "Invalid player address");
+            contest.players[playerAddresses[i]].finalRank = finalRanks[i];
+        }
+    }
+
+    function distributePrizes(uint256 contestId) external onlyContestManager(contestId) {
+        Contest storage contest = contests[contestId];
+        require(contest.isActive, "Contest is not active");
+        require(!contest.prizesDistributed, "Prizes already distributed");
+        require(block.timestamp >= contest.startTime + contest.duration, "Contest still in progress");
+
+        address[] memory winners = new address[](3);
+        uint256[] memory rankImprovements = new uint256[](contest.playerAddresses.length);
+
+        // Calculate rank improvements
+        for (uint256 i = 0; i < contest.playerAddresses.length; i++) {
+            address playerAddr = contest.playerAddresses[i];
+            Player memory player = contest.players[playerAddr];
+            require(player.finalRank > 0, "Final ranks not updated");
+            if (player.initialRank > player.finalRank) {
+                rankImprovements[i] = player.initialRank - player.finalRank;
+            }
+        }
+
+        // Sort players by rank improvement (simple bubble sort)
+        for (uint256 i = 0; i < rankImprovements.length; i++) {
+            for (uint256 j = i + 1; j < rankImprovements.length; j++) {
+                if (rankImprovements[i] < rankImprovements[j]) {
+                    // Swap improvements
+                    (rankImprovements[i], rankImprovements[j]) = (rankImprovements[j], rankImprovements[i]);
+                    // Swap addresses
+                    (contest.playerAddresses[i], contest.playerAddresses[j]) = 
+                        (contest.playerAddresses[j], contest.playerAddresses[i]);
+                }
+            }
+        }
+
+        // Calculate and distribute prizes
+        uint256[] memory prizeAmounts = new uint256[](3);
+        prizeAmounts[0] = (contest.prizePool * FIRST_PRIZE_PERCENTAGE) / 100;
+        prizeAmounts[1] = (contest.prizePool * SECOND_PRIZE_PERCENTAGE) / 100;
+        prizeAmounts[2] = (contest.prizePool * THIRD_PRIZE_PERCENTAGE) / 100;
+
+        uint256 totalDistributed;
+        for (uint256 i = 0; i < contest.playerAddresses.length && i < 3; i++) {
+            address winner = contest.playerAddresses[i];
+            uint256 prize = prizeAmounts[i];
+            winners[i] = winner;
+            totalDistributed += prize;
+            
+            (bool success, ) = payable(winner).call{value: prize}("");
+            require(success, "Prize transfer failed");
+        }
+
+        // Return any dust amount to the manager
+        if (contest.prizePool > totalDistributed) {
+            (bool success, ) = payable(contest.manager).call{value: contest.prizePool - totalDistributed}("");
+            require(success, "Dust transfer failed");
+        }
+
+        contest.prizesDistributed = true;
+        contest.isActive = false;
+
+        emit PrizesDistributed(contestId, winners, prizeAmounts);
+    }
+
+    function setContestDuration(uint256 contestId, uint256 newDuration) external onlyContestManager(contestId) {
+        Contest storage contest = contests[contestId];
+        require(contest.isActive, "Contest is not active");
+        require(contest.startTime == 0, "Contest has already started");
+        contest.duration = newDuration;
+    }
+
+    function getContestPlayers(uint256 contestId) external view returns (address[] memory) {
+        return contests[contestId].playerAddresses;
+    }
+
+    function getPlayerInfo(uint256 contestId, address player) external view returns (
+        string memory codeforcesId,
+        string memory discordId,
+        uint256 initialRank,
+        uint256 finalRank,
+        bool hasRegistered
+    ) {
+        Player memory p = contests[contestId].players[player];
+        return (p.codeforcesId, p.discordId, p.initialRank, p.finalRank, p.hasRegistered);
+    }
+}
