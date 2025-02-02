@@ -8,6 +8,8 @@ This project is a blockchain-based competitive platform where friends can challe
 
 **Polygon Deployment address -** 0x920b931fe1792Fa5B179Cfaec191dA1a03c4949b
 ## 💡 Video Demo
+Main functionality of the project - https://youtu.be/gbe6KQYk7vk
+Discord bot - ![4B963107-F704-47F8-A5BE-1E3EB7772DDC_1_102_o](https://github.com/user-attachments/assets/f5135809-867f-4dd1-bc7c-c2feebb4f8be)
 
 
 
