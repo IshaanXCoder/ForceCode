@@ -146,7 +146,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 # Discord Bot Setup
-bot_token = "MTMzNDk2ODAyNDg1MTE1MzAxNw.Gl-cJ-.VT-H1X_4iya_WfUpWRmKofXbAOqbPTVY-a_uv4"
+bot_token = "your-bot-token-here"
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
