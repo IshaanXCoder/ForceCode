@@ -4,7 +4,7 @@
 ## 🚀 Overview
 This project is a blockchain-based competitive platform where friends can challenge each other to solve problems on CodeForces and compete for a prize pool. The platform integrates **Solidity** (with Foundry for smart contracts), **Next.js** for the frontend, **C#** for backend functionality, and **Tailwind CSS with shadcn** for styling. Additionally we've even added a discord bot functionality to give live informaition of the problems solved by others.
 
-**Ethereum Deployment address -** 0xD6F93be0563844d8a925503fcf9b5937c0abE58E
+**Ethereum Deployment address -** 0x8f77b9f5a103da43a69e80371ecefadc016b6b83b9f0f1eac219588cb1818f22
 
 **Polygon Deployment address -** 0x920b931fe1792Fa5B179Cfaec191dA1a03c4949b
 ## 💡 Video Demo
